@@ -4,7 +4,7 @@
 resolution = true
 skip-lint = false
 
-[programs]
+[programs.localnet]
 slam_presale = "Fnv8zccRsC7r4FCbjj9pHxHQkd1ZQQA7odHaqDxV7Lau"
 
 [programs.devnet]

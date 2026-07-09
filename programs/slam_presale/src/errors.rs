@@ -40,4 +40,6 @@ pub enum PresaleError {
     MathUnderflow,
     #[msg("Vault token account does not have enough SLAM to cover this claim")]
     InsufficientVaultBalance,
+    #[msg("Cannot close presale state after purchases have been recorded")]
+    StateNotEmpty,
 }

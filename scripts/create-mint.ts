@@ -1,17 +1,18 @@
 /**
- * Creates the SLAM SPL Token-2022 mint on devnet.
+ * Creates the SLAM mint on devnet.
  *
- * Deliberately a PLAIN Token-2022 mint for now (no transfer-fee/permanent-
- * delegate/interest-bearing extensions yet) to get the presale mechanism
- * proven end-to-end first — see task "Add Token-2022 extensions to the SLAM
- * mint" for that follow-up. Extensions can only be set at mint-creation
- * time, so this mint will need to be recreated (and the presale
- * re-initialized) once those are added.
+ * Classic SPL Token, NOT Token-2022: the presale program uses
+ * `anchor_spl::token::Token` in every instruction, so a Token-2022 mint
+ * fails account validation at initialize. The planned Token-2022 extensions
+ * (transfer-fee etc. — see task "Add Token-2022 extensions to the SLAM
+ * mint") require migrating the program to `token_interface` first; when that
+ * lands, this mint must be recreated and the presale re-initialized
+ * (scripts/close-presale-state.ts exists for exactly that reset).
  *
  * Usage: npx ts-node scripts/create-mint.ts
  */
 import { Connection, Keypair, clusterApiUrl } from '@solana/web3.js';
-import { createMint, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
+import { createMint, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -20,7 +21,9 @@ const SLAM_DECIMALS = 6; // see constants.rs for why this can't be 9
 
 async function main() {
   const connection = new Connection(clusterApiUrl('devnet'), 'confirmed');
-  const keypairPath = path.join(os.homedir(), '.config/solana/id.json');
+  // Same authority wallet the presale admin uses (Cz3b53Xr...), not
+  // ~/.config/solana/id.json which holds an unrelated key.
+  const keypairPath = path.join(__dirname, '../../../devnet-wallet.json');
   const secret = JSON.parse(fs.readFileSync(keypairPath, 'utf-8'));
   const payer = Keypair.fromSecretKey(new Uint8Array(secret));
 
@@ -39,7 +42,7 @@ async function main() {
     SLAM_DECIMALS,
     undefined,
     undefined,
-    TOKEN_2022_PROGRAM_ID
+    TOKEN_PROGRAM_ID
   );
 
   console.log('SLAM mint created:', mint.toBase58());

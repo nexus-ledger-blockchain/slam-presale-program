@@ -32,7 +32,9 @@ const VAULT_AUTHORITY_SEED = Buffer.from('presale-vault-authority');
 
 async function main() {
   const connection = new Connection(clusterApiUrl('devnet'), 'confirmed');
-  const keypairPath = path.join(os.homedir(), '.config/solana/id.json');
+  // Must be the program upgrade authority / SLAM mint authority wallet
+  // (Cz3b53Xr...), not ~/.config/solana/id.json which holds an unrelated key.
+  const keypairPath = path.join(__dirname, '../../../devnet-wallet.json');
   const secret = JSON.parse(fs.readFileSync(keypairPath, 'utf-8'));
   const admin = Keypair.fromSecretKey(new Uint8Array(secret));
 

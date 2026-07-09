@@ -74,4 +74,11 @@ pub mod slam_presale {
     pub fn transfer_admin(ctx: Context<TransferAdmin>, new_admin: Pubkey) -> Result<()> {
         admin::transfer_admin(ctx, new_admin)
     }
+
+    /// Admin-only devnet reset: closes the global state (rent back to admin)
+    /// so `initialize` can run again. Rejected once any tokens have been
+    /// sold. REVIEW BEFORE MAINNET.
+    pub fn close_presale_state(ctx: Context<ClosePresaleState>) -> Result<()> {
+        admin::close_presale_state(ctx)
+    }
 }

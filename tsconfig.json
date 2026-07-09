@@ -3,7 +3,7 @@
     "target": "es2019",
     "lib": ["es2019"],
     "module": "commonjs",
-    "types": ["mocha", "chai"],
+    "types": ["mocha", "chai", "node"],
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,

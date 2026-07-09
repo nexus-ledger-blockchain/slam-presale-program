@@ -63,3 +63,31 @@ pub fn transfer_admin(ctx: Context<TransferAdmin>, new_admin: Pubkey) -> Result<
     ctx.accounts.presale_state.admin = new_admin;
     Ok(())
 }
+
+#[derive(Accounts)]
+pub struct ClosePresaleState<'info> {
+    #[account(mut)]
+    pub admin: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [GLOBAL_SEED],
+        bump = presale_state.bump,
+        has_one = admin @ PresaleError::Unauthorized,
+        close = admin,
+    )]
+    pub presale_state: Account<'info, PresaleState>,
+}
+
+/// Devnet reset tool: tears down the global state so `initialize` can be run
+/// again (e.g. after pointing at a recreated SLAM mint — see create-mint.ts,
+/// which notes the mint must be recreated when Token-2022 extensions land).
+/// Refuses to run once any purchase has been recorded, so it can never erase
+/// buyer entitlements. REVIEW BEFORE MAINNET: consider removing entirely.
+pub fn close_presale_state(ctx: Context<ClosePresaleState>) -> Result<()> {
+    require!(
+        ctx.accounts.presale_state.total_tokens_sold == 0,
+        PresaleError::StateNotEmpty
+    );
+    Ok(())
+}
