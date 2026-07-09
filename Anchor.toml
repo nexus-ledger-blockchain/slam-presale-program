@@ -4,11 +4,11 @@
 resolution = true
 skip-lint = false
 
-[programs.localnet]
-slam_presale = "A9jjuCA1PW134vjiyamTgRp5NLBJRMzEWqw2wUeLvTwb"
+[programs]
+slam_presale = "Fnv8zccRsC7r4FCbjj9pHxHQkd1ZQQA7odHaqDxV7Lau"
 
 [programs.devnet]
-slam_presale = "A9jjuCA1PW134vjiyamTgRp5NLBJRMzEWqw2wUeLvTwb"
+slam_presale = "Fnv8zccRsC7r4FCbjj9pHxHQkd1ZQQA7odHaqDxV7Lau"
 
 [registry]
 url = "https://api.apr.dev"

@@ -8,7 +8,7 @@ pub mod state;
 
 use instructions::*;
 
-declare_id!("A9jjuCA1PW134vjiyamTgRp5NLBJRMzEWqw2wUeLvTwb");
+declare_id!("Fnv8zccRsC7r4FCbjj9pHxHQkd1ZQQA7odHaqDxV7Lau");
 
 #[program]
 pub mod slam_presale {
