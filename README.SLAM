@@ -1,0 +1,115 @@
+# SLAM Presale Program (Anchor)
+
+Solana smart contract managing the SLAM token presale. Implements tiered pricing, vesting schedules, and contribution tracking.
+
+## Stack
+- Anchor 0.31.1
+- Rust (Solana BPF)
+- Token-2022 (SPL Token Extension)
+- Solana CLI 2.4.x
+
+## Program ID
+**Devnet**: `SLAM123...` (placeholder — deploy to get real ID)
+
+**Note**: Program ID will change after each deployment. Update this after devnet deploy, then again for testnet/mainnet.
+
+## Instructions
+
+### Initialization
+- `initialize` — Set up presale state (start/end times, token mint, treasury)
+- `set_presale_params` — Configure rounds, pricing, allocation
+
+### User Actions
+- `contribute` — User sends SOL/USDC/USDT, receives SLAM allocation
+- `claim_tokens` — Withdraw vested tokens after cliff period
+
+### Admin Actions
+- `update_round` — Adjust pricing (requires multisig)
+- `emergency_pause` — Pause contributions
+- `withdraw_treasury` — Move raised funds to treasury (requires multisig)
+
+## Accounts
+
+### PresaleState (global)
+- `authority`: program deployer
+- `token_mint`: SLAM mint address
+- `treasury`: raised funds destination
+- `start_time`, `end_time`: presale window
+- `current_round`: active round index
+- `total_raised`: SOL/USDC collected
+- `total_slam_sold`: tokens allocated
+
+### UserAllocation (per-user PDA)
+- Seeds: `["allocation", user_pubkey]`
+- `contributor`: wallet address
+- `amount_contributed`: total paid
+- `slam_allocated`: tokens earned
+- `vesting_start`: timestamp
+- `vesting_duration`: seconds
+- `claimed`: amount withdrawn
+
+### VestingSchedule (configurable)
+- 25% unlock at TGE
+- 75% linear vesting over 18 months (6-month cliff)
+
+## Build Locally
+```bash
+cd programs/slam-presale
+npm install              # Anchor + TS deps
+anchor build             # Compile Rust → .so
+anchor test              # Run integration tests
+```
+
+## Deploy (Devnet)
+```bash
+# 1. Ensure solana CLI is configured
+solana config set --url devnet
+
+# 2. Get program keypair ID
+solana-keygen pubkey target/deploy/slam_presale-keypair.json
+
+# 3. Fund deployer wallet (need ~2 SOL for devnet deploy + rent)
+solana airdrop 2 <deployer-wallet>
+
+# 4. Deploy
+anchor deploy --provider.cluster devnet
+
+# 5. Copy new program ID from output, update Anchor.toml + this README
+```
+
+## Build Status
+- ✅ Anchor project structure valid
+- ✅ Cargo.toml dependencies resolve
+- ⚠️ `slam_presale.so` exists but not yet deployed to devnet
+- ⚠️ Program ID placeholder — deploy and update
+
+## Connects To
+- SLAM Token (mint authority = presale program)
+- USDC/USDT mints (payment tokens)
+- Presale backend (off-chain indexer reads on-chain events)
+
+## Git
+- Remote: `https://github.com/nexus-ledger-blockchain/slam-presale-program.git`
+- Branch: `master`
+
+## Security Notes
+- Program uses PDA for user allocation (no user-controlled seeds)
+- All state mutations require signature checks
+- Treasury withdrawal requires multisig (2-of-3)
+- Contribution validation: min/max limits, round timing, payment token validation
+
+## Testing Plan
+1. Unit tests for each instruction (`tests/*.ts`)
+2. Integration test: full presale flow (init → contribute → claim)
+3. Edge cases: early contribution, late claim, partial vesting
+4. Upgrade test: deploy v2, migrate state
+
+## Next Steps
+1. ~~Complete Rust logic~~ (done)
+2. Write comprehensive test suite
+3. Deploy to devnet + update program ID
+4. Run test suite against devnet
+5. Audit (pre-mainnet)
+6. Deploy to testnet, then mainnet
+
+**Last updated**: July 8, 2026
