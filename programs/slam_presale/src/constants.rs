@@ -13,13 +13,14 @@ pub const NUM_ROUNDS: u8 = 10;
 pub const ROUND_ALLOCATION_TOKENS: u64 = 750_000_000 * SLAM_DECIMALS_MULTIPLIER; // 750M SLAM per round
 
 /// Price per whole SLAM token in micro-USD (1e6 = $1.00), one entry per round.
-/// This matches the published round table exactly:
-/// R1 $0.00043 .. R10 $0.00091, 750M tokens/round, ~$5,002,500 raised in total.
+/// This matches the approved round table exactly (decided July 9, 2026):
+/// R1 $0.00010 .. R10 $0.00097 linear, 750M tokens/round, rounded to integer
+/// micro-USD so the sum still lands on the published $4,012,500 total raise.
 /// Baked in as a compile-time constant (not admin-adjustable) deliberately:
 /// buyers should be able to trust the pricing schedule can't be changed after
 /// the fact by whoever holds the admin key.
 pub const ROUND_PRICE_MICRO_USD: [u64; NUM_ROUNDS as usize] =
-    [430, 480, 530, 590, 640, 690, 750, 800, 850, 910];
+    [100, 197, 293, 390, 487, 583, 680, 777, 873, 970];
 
 /// Minimum contribution per transaction, in micro-USD. Placeholder — confirm
 /// the real minimum with the team before deploying; $50 just guards against
