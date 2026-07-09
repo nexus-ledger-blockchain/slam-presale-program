@@ -1,0 +1,17 @@
+{
+  "name": "SLAM",
+  "symbol": "SLAM",
+  "description": "SLAM is the token behind SLAM NEWS, the citizen news network where everyone's a reporter and every report pays. Reporters earn SLAM instantly for geolocated news, neighbors verify stories, and readers tip — all settled on Solana.",
+  "image": "https://raw.githubusercontent.com/nexus-ledger-blockchain/slam-presale-program/master/assets/slam-token.png",
+  "external_url": "https://github.com/nexus-ledger-blockchain/slam-presale-program",
+  "attributes": [],
+  "properties": {
+    "files": [
+      {
+        "uri": "https://raw.githubusercontent.com/nexus-ledger-blockchain/slam-presale-program/master/assets/slam-token.png",
+        "type": "image/png"
+      }
+    ],
+    "category": "image"
+  }
+}
