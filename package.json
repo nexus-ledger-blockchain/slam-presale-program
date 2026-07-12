@@ -13,6 +13,7 @@
     "@metaplex-foundation/umi": "^1.5.1",
     "@metaplex-foundation/umi-bundle-defaults": "^1.5.1",
     "@solana/spl-token": "^0.4.9",
+    "@streamflow/stream": "^6.5.1",
     "@types/chai": "^4.3.16",
     "@types/mocha": "^10.0.7",
     "chai": "^4.4.1",
