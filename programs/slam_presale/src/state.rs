@@ -38,6 +38,13 @@ pub struct PresaleState {
 
     pub is_paused: bool,
 
+    /// Set by `finalize` once the sale window closes at or above the soft cap:
+    /// proceeds are swept from the program escrow to the multisig vault and the
+    /// raise is locked in. Until then, stable proceeds sit in escrow so that a
+    /// failed (below-soft-cap) raise can be fully refunded. Claims cannot be
+    /// enabled unless the raise is finalized.
+    pub is_finalized: bool,
+
     pub is_claim_active: bool,
     /// Set once, the first time `enable_claim` runs. Vesting math is relative
     /// to this timestamp.
@@ -57,6 +64,7 @@ impl PresaleState {
         + 8 * NUM_ROUNDS as usize // round_tokens_sold
         + 8 * 2 // total_tokens_sold, total_usd_raised_micro
         + 1 // is_paused
+        + 1 // is_finalized
         + 1 // is_claim_active
         + 8 // tge_timestamp
         + 1 // bump
@@ -133,8 +141,8 @@ impl PresaleState {
     }
 }
 
-/// Vesting: 10% unlocks at TGE, the remaining 90% unlocks linearly over
-/// `VESTING_DURATION_SECONDS`. Matches the published Tokenomics page.
+/// Vesting: 20% unlocks at TGE, the remaining 80% unlocks linearly over
+/// `VESTING_DURATION_SECONDS` (~4 months).
 pub fn total_vested_amount(total_purchased: u64, tge_timestamp: i64, now: i64) -> Result<u64> {
     if now <= tge_timestamp {
         return Ok(0);

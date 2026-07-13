@@ -86,6 +86,7 @@ pub fn handler(
     state.total_usd_raised_micro = 0;
 
     state.is_paused = false;
+    state.is_finalized = false;
     state.is_claim_active = false;
     state.tge_timestamp = 0;
 

@@ -40,6 +40,14 @@ pub struct BuyWithSol<'info> {
 }
 
 pub fn handler(ctx: Context<BuyWithSol>, max_sol_lamports: u64) -> Result<()> {
+    // SOL purchases are disabled for the minimal transparent raise: native SOL
+    // cannot be held in the SPL escrow that makes refunds possible, so allowing
+    // SOL would create un-refundable contributions. All purchases go through
+    // USDC (buy_with_stable). This guard runs before any state mutation.
+    return Err(PresaleError::SolDisabled.into());
+
+    #[allow(unreachable_code)]
+    {
     require!(max_sol_lamports > 0, PresaleError::ZeroAmount);
 
     let price_account_info = &ctx.accounts.price_feed;
@@ -116,6 +124,7 @@ pub fn handler(ctx: Context<BuyWithSol>, max_sol_lamports: u64) -> Result<()> {
     });
 
     Ok(())
+    }
 }
 
 #[event]

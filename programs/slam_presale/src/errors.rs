@@ -42,4 +42,22 @@ pub enum PresaleError {
     InsufficientVaultBalance,
     #[msg("Cannot close presale state after purchases have been recorded")]
     StateNotEmpty,
+    #[msg("Contribution would exceed the per-wallet maximum")]
+    AboveWalletMaximum,
+    #[msg("Contribution would exceed the hard cap")]
+    AboveHardCap,
+    #[msg("The sale window has not closed yet")]
+    SaleNotEnded,
+    #[msg("The soft cap was reached — the raise succeeded, no refunds")]
+    SoftCapReached,
+    #[msg("The soft cap was not reached — the raise failed, cannot finalize")]
+    SoftCapNotReached,
+    #[msg("The raise has already been finalized")]
+    AlreadyFinalized,
+    #[msg("The raise must be finalized before claiming can be enabled")]
+    NotFinalized,
+    #[msg("Nothing to refund for this buyer")]
+    NothingToRefund,
+    #[msg("SOL purchases are disabled for this raise; pay with USDC")]
+    SolDisabled,
 }

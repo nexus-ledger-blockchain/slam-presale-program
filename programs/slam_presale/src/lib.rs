@@ -41,6 +41,19 @@ pub mod slam_presale {
         buy_with_stable::handler(ctx, stable_amount)
     }
 
+    /// Admin-only. After the sale window closes, if the soft cap was reached,
+    /// sweeps escrowed proceeds to the multisig vault and marks the raise
+    /// finalized (the precondition for enabling claims).
+    pub fn finalize(ctx: Context<Finalize>) -> Result<()> {
+        finalize::handler(ctx)
+    }
+
+    /// Buyer-callable. After the sale window closes, if the soft cap was NOT
+    /// reached, returns the buyer's full stable contribution from escrow.
+    pub fn refund(ctx: Context<Refund>) -> Result<()> {
+        refund::handler(ctx)
+    }
+
     /// Admin-only. Activates claiming and fixes the TGE timestamp that all
     /// vesting math is computed against. Requires the token vault to already
     /// hold at least `total_tokens_sold` SLAM.

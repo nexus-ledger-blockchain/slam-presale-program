@@ -25,6 +25,7 @@ pub struct EnableClaim<'info> {
 pub fn handler(ctx: Context<EnableClaim>, tge_timestamp: i64) -> Result<()> {
     let state = &mut ctx.accounts.presale_state;
     require!(!state.is_claim_active, PresaleError::ClaimAlreadyActive);
+    require!(state.is_finalized, PresaleError::NotFinalized);
     require!(
         ctx.accounts.token_vault.amount >= state.total_tokens_sold,
         PresaleError::InsufficientVaultBalance

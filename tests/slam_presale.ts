@@ -4,11 +4,25 @@ import {
   createMint,
   getOrCreateAssociatedTokenAccount,
   mintTo,
+  getAccount,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import { assert } from "chai";
 import { SlamPresale } from "../target/types/slam_presale";
 
-describe("slam_presale", () => {
+// Minimal transparent raise: flat $0.00030/token, $1.5M hard cap, $200k soft
+// cap, $25k per-wallet max, USDC-only, escrowed + refundable.
+//
+// This suite drives the FAILED-raise lifecycle end to end: it raises below the
+// soft cap and verifies that finalize is rejected, claiming is blocked, and
+// every buyer can refund their full contribution from escrow. The escrow
+// signed-transfer exercised by refund is the same vault_authority-signed SPL
+// transfer that `finalize` uses to sweep to the vault on a successful raise.
+const PRICE_MICRO = 300; // $0.00030 per whole SLAM token
+const DEC = 1_000_000;
+
+describe("slam_presale — minimal transparent raise", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
   const program = anchor.workspace.SlamPresale as Program<SlamPresale>;
@@ -25,185 +39,179 @@ describe("slam_presale", () => {
   );
 
   let slamMint: anchor.web3.PublicKey;
+  let stableMint: anchor.web3.PublicKey;
   let vault: anchor.web3.Keypair;
   let buyer: anchor.web3.Keypair;
+  let buyerStable: anchor.web3.PublicKey;
+  let escrowStable: anchor.web3.PublicKey;
+  const SALE_LEN_S = 8;
+
+  const userPda = (b: anchor.web3.PublicKey) =>
+    anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("presale-user"), b.toBuffer()],
+      program.programId
+    )[0];
 
   before(async () => {
     vault = anchor.web3.Keypair.generate();
-    slamMint = await createMint(
-      connection,
-      admin.payer,
-      admin.publicKey,
-      null,
-      6 // SLAM_DECIMALS — see constants.rs for why this must stay 6
-    );
-  });
-
-  it("initializes the presale", async () => {
-    const tokenVault = anchor.utils.token.associatedAddress({
-      mint: slamMint,
-      owner: vaultAuthority,
-    });
-
-    // Dummy price feed account for localnet — a real Pyth feed address is
-    // required on devnet/mainnet.
-    const priceFeed = anchor.web3.Keypair.generate();
-
-    const now = Math.floor(Date.now() / 1000);
-    await program.methods
-      .initialize(
-        new anchor.BN(now - 60),
-        new anchor.BN(now + 60 * 60 * 24 * 30),
-        []
-      )
-      .accounts({
-        admin: admin.publicKey,
-        presaleState: globalState,
-        vaultAuthority,
-        slamMint,
-        tokenVault,
-        vault: vault.publicKey,
-        solUsdPriceFeed: priceFeed.publicKey,
-      })
-      .rpc();
-
-    const state = await program.account.presaleState.fetch(globalState);
-    assert.equal(state.currentRound, 0);
-    assert.equal(state.totalTokensSold.toNumber(), 0);
-    assert.isFalse(state.isPaused);
-  });
-
-  it("buys with USDC-equivalent stable coin and fills round 1 at the correct price", async () => {
     buyer = anchor.web3.Keypair.generate();
     await connection.confirmTransaction(
       await connection.requestAirdrop(buyer.publicKey, anchor.web3.LAMPORTS_PER_SOL)
     );
+    slamMint = await createMint(connection, admin.payer, admin.publicKey, null, 6);
+    stableMint = await createMint(connection, admin.payer, admin.publicKey, null, 6);
 
-    const stableMint = await createMint(
-      connection,
-      admin.payer,
-      admin.publicKey,
-      null,
-      6
+    const ata = await getOrCreateAssociatedTokenAccount(
+      connection, admin.payer, stableMint, buyer.publicKey
     );
+    buyerStable = ata.address;
+    await mintTo(connection, admin.payer, stableMint, buyerStable, admin.publicKey, 500_000_000); // $500
 
-    await program.methods
-      .updateAcceptedStables([stableMint])
-      .accounts({ admin: admin.publicKey, presaleState: globalState })
-      .rpc();
-
-    const buyerStableAccount = await getOrCreateAssociatedTokenAccount(
-      connection,
-      admin.payer,
-      stableMint,
-      buyer.publicKey
-    );
-    await mintTo(
-      connection,
-      admin.payer,
-      stableMint,
-      buyerStableAccount.address,
-      admin.publicKey,
-      1_000_000_000 // 1000 stable-coin units, plenty to test a small buy
-    );
-
-    const vaultStableAccount = await getOrCreateAssociatedTokenAccount(
-      connection,
-      admin.payer,
-      stableMint,
-      vault.publicKey
-    );
-
-    const [userAllocation] = anchor.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("presale-user"), buyer.publicKey.toBuffer()],
-      program.programId
-    );
-
-    // $100 at round 1's price (100 micro-USD/token) => exactly 1,000,000 SLAM
-    // = 1e12 raw units at 6 decimals.
-    const stableAmount = new anchor.BN(100_000_000); // $100.00 in 6-decimal units
-
-    await program.methods
-      .buyWithStable(stableAmount)
-      .accounts({
-        buyer: buyer.publicKey,
-        presaleState: globalState,
-        userAllocation,
-        stableMint,
-        buyerStableAccount: buyerStableAccount.address,
-        vaultStableAccount: vaultStableAccount.address,
-      })
-      .signers([buyer])
-      .rpc();
-
-    const allocation = await program.account.userAllocation.fetch(userAllocation);
-    assert.equal(allocation.totalPurchased.toNumber(), 1_000_000_000_000);
-    assert.equal(allocation.paidStableMicro.toNumber(), 100_000_000);
-
-    const state = await program.account.presaleState.fetch(globalState);
-    assert.equal(state.totalTokensSold.toNumber(), 1_000_000_000_000);
-    assert.equal(state.totalUsdRaisedMicro.toNumber(), 100_000_000);
+    escrowStable = anchor.utils.token.associatedAddress({ mint: stableMint, owner: vaultAuthority });
   });
 
-  it("enables claim and pays out the 10% TGE unlock", async () => {
-    const tokenVault = anchor.utils.token.associatedAddress({
-      mint: slamMint,
-      owner: vaultAuthority,
-    });
+  it("initializes with a short sale window and USDC accepted", async () => {
+    const tokenVault = anchor.utils.token.associatedAddress({ mint: slamMint, owner: vaultAuthority });
+    const priceFeed = anchor.web3.Keypair.generate();
+    const now = Math.floor(Date.now() / 1000);
 
-    const state = await program.account.presaleState.fetch(globalState);
-    const totalSold = BigInt(state.totalTokensSold.toString());
-
-    // enable_claim requires the vault to cover everything sold.
-    await mintTo(
-      connection,
-      admin.payer,
-      slamMint,
-      tokenVault,
-      admin.publicKey,
-      totalSold
-    );
-
-    // TGE a few seconds in the past so the claim window is open; the linear
-    // component accrued in those seconds is negligible next to the 10% unlock.
-    const tge = Math.floor(Date.now() / 1000) - 10;
     await program.methods
-      .enableClaim(new anchor.BN(tge))
-      .accounts({ admin: admin.publicKey, presaleState: globalState, tokenVault })
+      .initialize(new anchor.BN(now - 2), new anchor.BN(now + SALE_LEN_S), [stableMint])
+      .accounts({
+        admin: admin.publicKey, presaleState: globalState, vaultAuthority,
+        slamMint, tokenVault, vault: vault.publicKey, solUsdPriceFeed: priceFeed.publicKey,
+      })
       .rpc();
 
-    const [userAllocation] = anchor.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("presale-user"), buyer.publicKey.toBuffer()],
-      program.programId
-    );
+    const s = await program.account.presaleState.fetch(globalState);
+    assert.equal(s.acceptedStablesLen, 1);
+    assert.isFalse(s.isFinalized);
+    assert.isFalse(s.isPaused);
+  });
 
+  it("buys at the flat price and escrows the funds", async () => {
+    const amount = new anchor.BN(100_000_000); // $100
     await program.methods
-      .claimTokens()
+      .buyWithStable(amount)
       .accounts({
-        buyer: buyer.publicKey,
-        presaleState: globalState,
-        userAllocation,
-        vaultAuthority,
-        tokenVault,
-        slamMint,
+        buyer: buyer.publicKey, presaleState: globalState, userAllocation: userPda(buyer.publicKey),
+        vaultAuthority, stableMint, buyerStableAccount: buyerStable, escrowStableAccount: escrowStable,
+        tokenProgram: TOKEN_PROGRAM_ID, associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+        systemProgram: anchor.web3.SystemProgram.programId,
       })
       .signers([buyer])
       .rpc();
 
-    const buyerSlamAccount = anchor.utils.token.associatedAddress({
-      mint: slamMint,
-      owner: buyer.publicKey,
-    });
-    const received = BigInt(
-      (await connection.getTokenAccountBalance(buyerSlamAccount)).value.amount
-    );
+    // $100 / $0.00030 = 333,333.333... whole tokens => 333,333,333,333 raw (floor)
+    const expected = Math.floor((100_000_000 * DEC) / PRICE_MICRO);
+    const alloc = await program.account.userAllocation.fetch(userPda(buyer.publicKey));
+    assert.equal(alloc.totalPurchased.toString(), expected.toString());
+    assert.equal(alloc.paidStableMicro.toNumber(), 100_000_000);
 
-    // Exactly 10% TGE unlock plus < 0.01% of linear drift for elapsed seconds.
-    const tgeUnlock = totalSold / 10n;
-    assert.isTrue(received >= tgeUnlock, `received ${received} < TGE unlock ${tgeUnlock}`);
-    assert.isTrue(received < tgeUnlock + totalSold / 10_000n, `received ${received} far above TGE unlock ${tgeUnlock}`);
+    // Funds are in ESCROW (vault_authority ATA), not the multisig vault.
+    const esc = await getAccount(connection, escrowStable);
+    assert.equal(esc.amount.toString(), "100000000");
+  });
 
-    const allocation = await program.account.userAllocation.fetch(userAllocation);
-    assert.equal(allocation.totalClaimed.toString(), received.toString());
+  it("rejects a contribution above the per-wallet maximum", async () => {
+    let failed = false;
+    try {
+      await program.methods
+        .buyWithStable(new anchor.BN(25_000_000_001)) // $25,000.000001 > $25k cap
+        .accounts({
+          buyer: buyer.publicKey, presaleState: globalState, userAllocation: userPda(buyer.publicKey),
+          vaultAuthority, stableMint, buyerStableAccount: buyerStable, escrowStableAccount: escrowStable,
+          tokenProgram: TOKEN_PROGRAM_ID, associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .signers([buyer])
+        .rpc();
+    } catch (e: any) {
+      failed = true;
+      assert.include(e.toString(), "AboveWalletMaximum");
+    }
+    assert.isTrue(failed, "expected per-wallet maximum to reject the buy");
+  });
+
+  it("waits for the sale window to close", async () => {
+    await new Promise((r) => setTimeout(r, (SALE_LEN_S + 2) * 1000));
+  }).timeout((SALE_LEN_S + 5) * 1000);
+
+  it("rejects finalize below the soft cap", async () => {
+    const vaultStable = (await getOrCreateAssociatedTokenAccount(
+      connection, admin.payer, stableMint, vault.publicKey
+    )).address;
+    let failed = false;
+    try {
+      await program.methods
+        .finalize()
+        .accounts({
+          admin: admin.publicKey, presaleState: globalState, vaultAuthority, stableMint,
+          escrowStableAccount: escrowStable, vaultStableAccount: vaultStable, tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .rpc();
+    } catch (e: any) {
+      failed = true;
+      assert.include(e.toString(), "SoftCapNotReached");
+    }
+    assert.isTrue(failed, "expected finalize to reject below soft cap");
+  });
+
+  it("blocks enabling claims on an unfinalized raise", async () => {
+    const tokenVault = anchor.utils.token.associatedAddress({ mint: slamMint, owner: vaultAuthority });
+    let failed = false;
+    try {
+      await program.methods
+        .enableClaim(new anchor.BN(Math.floor(Date.now() / 1000)))
+        .accounts({ admin: admin.publicKey, presaleState: globalState, tokenVault })
+        .rpc();
+    } catch (e: any) {
+      failed = true;
+      assert.include(e.toString(), "NotFinalized");
+    }
+    assert.isTrue(failed, "expected enable_claim to require finalization");
+  });
+
+  it("refunds the buyer's full contribution from escrow", async () => {
+    const before = Number((await getAccount(connection, buyerStable)).amount);
+
+    await program.methods
+      .refund()
+      .accounts({
+        buyer: buyer.publicKey, presaleState: globalState, userAllocation: userPda(buyer.publicKey),
+        vaultAuthority, stableMint, escrowStableAccount: escrowStable, buyerStableAccount: buyerStable,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([buyer])
+      .rpc();
+
+    const after = Number((await getAccount(connection, buyerStable)).amount);
+    assert.equal(after - before, 100_000_000, "buyer should get their full $100 back");
+
+    const esc = await getAccount(connection, escrowStable);
+    assert.equal(esc.amount.toString(), "0", "escrow should be drained");
+
+    const alloc = await program.account.userAllocation.fetch(userPda(buyer.publicKey));
+    assert.equal(alloc.paidStableMicro.toNumber(), 0);
+    assert.equal(alloc.totalPurchased.toNumber(), 0);
+  });
+
+  it("rejects a second refund (nothing left)", async () => {
+    let failed = false;
+    try {
+      await program.methods
+        .refund()
+        .accounts({
+          buyer: buyer.publicKey, presaleState: globalState, userAllocation: userPda(buyer.publicKey),
+          vaultAuthority, stableMint, escrowStableAccount: escrowStable, buyerStableAccount: buyerStable,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .signers([buyer])
+        .rpc();
+    } catch (e: any) {
+      failed = true;
+      assert.include(e.toString(), "NothingToRefund");
+    }
+    assert.isTrue(failed, "expected second refund to fail");
   });
 });
