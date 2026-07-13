@@ -210,4 +210,54 @@ describe("slam_staking — fixed-APY lock tiers", () => {
     const done = await gov.account.proposal.fetch(proposalPda(0));
     assert.equal(done.status, 1, "proposal should be PASSED (status 1)");
   }).timeout(15000);
+
+  it("lets the admin retune params, and rejects a non-admin", async () => {
+    await gov.methods.setParams(new anchor.BN(600), new anchor.BN(5_000 * DEC))
+      .accounts({ admin: admin.publicKey, config: govConfig })
+      .rpc();
+    const c = await gov.account.govConfig.fetch(govConfig);
+    assert.equal(c.votingPeriodSecs.toNumber(), 600);
+    assert.equal(c.minWeightToPropose.toString(), (5_000 * DEC).toString());
+
+    // A stranger cannot change them.
+    let denied = false;
+    try {
+      await gov.methods.setParams(new anchor.BN(60), new anchor.BN(1))
+        .accounts({ admin: user.publicKey, config: govConfig })
+        .signers([user]).rpc();
+    } catch { denied = true; }
+    assert.isTrue(denied, "non-admin set_params should fail");
+
+    // A zero-length window would open proposals already closed — rejected.
+    let badPeriod = false;
+    try {
+      await gov.methods.setParams(new anchor.BN(0), new anchor.BN(1))
+        .accounts({ admin: admin.publicKey, config: govConfig }).rpc();
+    } catch { badPeriod = true; }
+    assert.isTrue(badPeriod, "zero voting period should be rejected");
+  });
+
+  it("rejects voting with someone else's stake account", async () => {
+    // Open a fresh proposal (config now has a 600s window).
+    const c = await gov.account.govConfig.fetch(govConfig);
+    const id = c.proposalCount.toNumber();
+    await gov.methods.createProposal("Second proposal", "Checks stake-ownership binding.")
+      .accounts({
+        proposer: user.publicKey, config: govConfig, proposal: proposalPda(id),
+        proposerStake: stakePda(user.publicKey), systemProgram: anchor.web3.SystemProgram.programId,
+      }).signers([user]).rpc();
+
+    // `admin` tries to vote using `user`'s stake account — must fail.
+    let rejected = false;
+    try {
+      await gov.methods.castVote(1)
+        .accounts({
+          voter: admin.publicKey, config: govConfig, proposal: proposalPda(id),
+          voteRecord: votePda(proposalPda(id), admin.publicKey),
+          voterStake: stakePda(user.publicKey), // not admin's stake
+          systemProgram: anchor.web3.SystemProgram.programId,
+        }).rpc();
+    } catch { rejected = true; }
+    assert.isTrue(rejected, "voting with another wallet's stake must fail");
+  });
 });

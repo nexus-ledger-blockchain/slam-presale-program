@@ -6,6 +6,7 @@ pub mod state;
 
 use constants::*;
 use errors::GovError;
+use slam_staking::state::StakeAccount;
 use state::*;
 
 declare_id!("2vM3ByRmDVDV95mWr1PwX3AKyJtT7Cx5WrQWswn87CkV");
@@ -22,6 +23,14 @@ pub mod slam_governance {
         voting_period_secs: i64,
         min_weight_to_propose: u64,
     ) -> Result<()> {
+        // The StakeAccount type already pins voting weight to slam_staking; refuse
+        // to record a different program here so the config can't claim otherwise.
+        require_keys_eq!(staking_program, slam_staking::ID, GovError::WrongStakeProgram);
+        require!(
+            (MIN_VOTING_PERIOD_SECS..=MAX_VOTING_PERIOD_SECS).contains(&voting_period_secs),
+            GovError::InvalidVotingPeriod
+        );
+
         let c = &mut ctx.accounts.config;
         c.admin = ctx.accounts.admin.key();
         c.staking_program = staking_program;
@@ -37,11 +46,7 @@ pub mod slam_governance {
     pub fn create_proposal(ctx: Context<CreateProposal>, title: String, summary: String) -> Result<()> {
         require!(title.len() <= TITLE_MAX && summary.len() <= SUMMARY_MAX, GovError::TextTooLong);
 
-        let weight = stake_weight(
-            &ctx.accounts.proposer_stake,
-            &ctx.accounts.config.staking_program,
-            &ctx.accounts.proposer.key(),
-        )?;
+        let weight = stake_weight(&ctx.accounts.proposer_stake)?;
         require!(weight >= ctx.accounts.config.min_weight_to_propose, GovError::BelowProposalThreshold);
 
         let now = Clock::get()?.unix_timestamp;
@@ -72,11 +77,7 @@ pub mod slam_governance {
         require!(ctx.accounts.proposal.status == STATUS_ACTIVE, GovError::NotActive);
         require!(now <= ctx.accounts.proposal.voting_ends, GovError::VotingClosed);
 
-        let weight = stake_weight(
-            &ctx.accounts.voter_stake,
-            &ctx.accounts.config.staking_program,
-            &ctx.accounts.voter.key(),
-        )?;
+        let weight = stake_weight(&ctx.accounts.voter_stake)?;
         require!(weight > 0, GovError::NoVotingPower);
 
         let p = &mut ctx.accounts.proposal;
@@ -92,6 +93,25 @@ pub mod slam_governance {
         v.choice = choice;
         v.weight = weight;
         v.bump = ctx.bumps.vote_record;
+        Ok(())
+    }
+
+    /// Admin-only. Retune the voting window and the proposal threshold without
+    /// redeploying. Proposals already open keep the deadline they were created
+    /// with — `voting_ends` is stamped at creation, so changing the period never
+    /// moves the goalposts on a live vote.
+    pub fn set_params(
+        ctx: Context<SetParams>,
+        voting_period_secs: i64,
+        min_weight_to_propose: u64,
+    ) -> Result<()> {
+        require!(
+            (MIN_VOTING_PERIOD_SECS..=MAX_VOTING_PERIOD_SECS).contains(&voting_period_secs),
+            GovError::InvalidVotingPeriod
+        );
+        let c = &mut ctx.accounts.config;
+        c.voting_period_secs = voting_period_secs;
+        c.min_weight_to_propose = min_weight_to_propose;
         Ok(())
     }
 
@@ -135,12 +155,19 @@ pub struct CreateProposal<'info> {
     )]
     pub proposal: Box<Account<'info, Proposal>>,
 
-    /// CHECK: the proposer's slam_staking StakeAccount; validated in
-    /// `stake_weight` (owner program + stored owner) rather than by type, to
-    /// avoid a hard dependency on the staking crate.
-    pub proposer_stake: AccountInfo<'info>,
+    /// The proposer's stake. Typed, so Anchor enforces the owning program and
+    /// the discriminator; the constraint ties it to this signer.
+    #[account(constraint = proposer_stake.owner == proposer.key() @ GovError::StakeOwnerMismatch)]
+    pub proposer_stake: Box<Account<'info, StakeAccount>>,
 
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct SetParams<'info> {
+    pub admin: Signer<'info>,
+    #[account(mut, seeds = [CONFIG_SEED], bump = config.bump, has_one = admin @ GovError::Unauthorized)]
+    pub config: Box<Account<'info, GovConfig>>,
 }
 
 #[derive(Accounts)]
@@ -163,8 +190,10 @@ pub struct CastVote<'info> {
     )]
     pub vote_record: Box<Account<'info, VoteRecord>>,
 
-    /// CHECK: the voter's slam_staking StakeAccount; validated in `stake_weight`.
-    pub voter_stake: AccountInfo<'info>,
+    /// The voter's stake. Typed (owner program + discriminator checked by
+    /// Anchor); the constraint ties it to this signer.
+    #[account(constraint = voter_stake.owner == voter.key() @ GovError::StakeOwnerMismatch)]
+    pub voter_stake: Box<Account<'info, StakeAccount>>,
 
     pub system_program: Program<'info, System>,
 }

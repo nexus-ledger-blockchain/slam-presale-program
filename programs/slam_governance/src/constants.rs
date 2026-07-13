@@ -21,10 +21,9 @@ pub const STATUS_REJECTED: u8 = 2;
 pub const CHOICE_NO: u8 = 0;
 pub const CHOICE_YES: u8 = 1;
 
-// Byte offsets into a slam_staking StakeAccount (after the 8-byte Anchor
-// discriminator): owner:Pubkey@8, amount:u64@40, tier:u8@48. Read manually so
-// governance doesn't take a hard dependency on the staking crate.
-pub const STAKE_OWNER_OFFSET: usize = 8;
-pub const STAKE_AMOUNT_OFFSET: usize = 40;
-pub const STAKE_TIER_OFFSET: usize = 48;
-pub const STAKE_MIN_LEN: usize = 49;
+// Guard rails on the voting window. The floor exists to reject zero/negative
+// periods — those stamp `voting_ends` at or before creation, so a proposal would
+// open already closed and never be votable. It is deliberately not a policy
+// minimum (that's the admin's call, and tests need short windows).
+pub const MIN_VOTING_PERIOD_SECS: i64 = 1;
+pub const MAX_VOTING_PERIOD_SECS: i64 = 30 * 24 * 60 * 60; // 30 days

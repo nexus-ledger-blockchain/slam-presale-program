@@ -26,4 +26,6 @@ pub enum GovError {
     InvalidChoice,
     #[msg("Arithmetic overflow")]
     MathOverflow,
+    #[msg("Voting period must be between 1 hour and 30 days")]
+    InvalidVotingPeriod,
 }
