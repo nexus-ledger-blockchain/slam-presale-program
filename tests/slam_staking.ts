@@ -148,4 +148,66 @@ describe("slam_staking — fixed-APY lock tiers", () => {
     const vaultDelta = rewardVaultAfter - rewardVaultBefore;
     assert.isTrue(vaultDelta > 0.14 * amount, `reward vault should grow ~penalty, grew ${vaultDelta}`);
   });
+
+  // ── Governance (reads voting weight from the staking StakeAccount above) ──
+  const gov = anchor.workspace.SlamGovernance as anchor.Program<any>;
+  const govConfig = anchor.web3.PublicKey.findProgramAddressSync([Buffer.from("gov-config")], gov.programId)[0];
+  const proposalPda = (id: number) =>
+    anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("gov-proposal"), new anchor.BN(id).toArrayLike(Buffer, "le", 8)], gov.programId)[0];
+  const votePda = (proposal: anchor.web3.PublicKey, voter: anchor.web3.PublicKey) =>
+    anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("gov-vote"), proposal.toBuffer(), voter.toBuffer()], gov.programId)[0];
+
+  it("initializes governance and runs a stake-weighted proposal end to end", async () => {
+    // Give `user` an active tier-2 stake (2x voting weight).
+    await program.methods.stake(new anchor.BN(1_000_000 * DEC), 2)
+      .accounts({
+        owner: user.publicKey, config, stakeAccount: stakePda(user.publicKey),
+        ownerSlamAccount: userSlam, stakeVault, tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      }).signers([user]).rpc();
+
+    // Init governance: 3-second voting window, min weight 1 to propose.
+    await gov.methods.initialize(program.programId, new anchor.BN(3), new anchor.BN(1))
+      .accounts({ admin: admin.publicKey, config: govConfig, systemProgram: anchor.web3.SystemProgram.programId })
+      .rpc();
+
+    // user creates a proposal (has stake weight).
+    await gov.methods.createProposal("Fund community grants", "Allocate treasury to local reporting grants.")
+      .accounts({
+        proposer: user.publicKey, config: govConfig, proposal: proposalPda(0),
+        proposerStake: stakePda(user.publicKey), systemProgram: anchor.web3.SystemProgram.programId,
+      }).signers([user]).rpc();
+
+    // user votes YES; weight = 1,000,000 SLAM * 2.0 (tier 2) = 2,000,000.
+    await gov.methods.castVote(1)
+      .accounts({
+        voter: user.publicKey, config: govConfig, proposal: proposalPda(0),
+        voteRecord: votePda(proposalPda(0), user.publicKey),
+        voterStake: stakePda(user.publicKey), systemProgram: anchor.web3.SystemProgram.programId,
+      }).signers([user]).rpc();
+
+    const mid = await gov.account.proposal.fetch(proposalPda(0));
+    assert.equal(mid.yesWeight.toString(), (2_000_000 * DEC).toString(), "tier-2 weight should be 2x");
+    assert.equal(mid.noWeight.toNumber(), 0);
+
+    // Double-vote is rejected.
+    let doubled = false;
+    try {
+      await gov.methods.castVote(0)
+        .accounts({
+          voter: user.publicKey, config: govConfig, proposal: proposalPda(0),
+          voteRecord: votePda(proposalPda(0), user.publicKey),
+          voterStake: stakePda(user.publicKey), systemProgram: anchor.web3.SystemProgram.programId,
+        }).signers([user]).rpc();
+    } catch { doubled = true; }
+    assert.isTrue(doubled, "second vote should fail");
+
+    // Wait for voting to close, then finalize → PASSED.
+    await new Promise((r) => setTimeout(r, 4000));
+    await gov.methods.finalize().accounts({ proposal: proposalPda(0) }).rpc();
+    const done = await gov.account.proposal.fetch(proposalPda(0));
+    assert.equal(done.status, 1, "proposal should be PASSED (status 1)");
+  }).timeout(15000);
 });

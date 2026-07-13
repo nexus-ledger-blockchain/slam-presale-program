@@ -7,8 +7,10 @@ skip-lint = false
 [programs.devnet]
 slam_presale = "Fnv8zccRsC7r4FCbjj9pHxHQkd1ZQQA7odHaqDxV7Lau"
 slam_staking = "FLaXjknGBuX9FYPLzs3CKecYYWVgYuC8nTQequTMxAcH"
+slam_governance = "2vM3ByRmDVDV95mWr1PwX3AKyJtT7Cx5WrQWswn87CkV"
 
 [programs.localnet]
+slam_governance = "2vM3ByRmDVDV95mWr1PwX3AKyJtT7Cx5WrQWswn87CkV"
 slam_presale = "Fnv8zccRsC7r4FCbjj9pHxHQkd1ZQQA7odHaqDxV7Lau"
 slam_staking = "FLaXjknGBuX9FYPLzs3CKecYYWVgYuC8nTQequTMxAcH"
 
