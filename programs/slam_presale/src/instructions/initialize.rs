@@ -25,8 +25,12 @@ pub struct Initialize<'info> {
 
     pub slam_mint: Account<'info, Mint>,
 
+    // init_if_needed: the vault_authority PDA's SLAM ATA is derived
+    // deterministically and persists across a close+re-initialize of the
+    // presale state (closing the state PDA does not close this ATA). Reuse it
+    // if it already exists rather than failing.
     #[account(
-        init,
+        init_if_needed,
         payer = admin,
         associated_token::mint = slam_mint,
         associated_token::authority = vault_authority,
