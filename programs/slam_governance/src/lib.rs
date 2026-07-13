@@ -77,6 +77,18 @@ pub mod slam_governance {
         require!(ctx.accounts.proposal.status == STATUS_ACTIVE, GovError::NotActive);
         require!(now <= ctx.accounts.proposal.voting_ends, GovError::VotingClosed);
 
+        // Anti-recycling snapshot: only a stake that already existed when the
+        // proposal opened may vote on it. Stake is liquid and weight is sampled
+        // at cast time, so without this a single pot of SLAM can be unstaked,
+        // moved to a fresh wallet, restaked, and voted again — inflating weight
+        // without holding more tokens (verified exploitable at 3x on devnet).
+        // A restaked pot always gets a new `staked_at` (stake is `init`, closed
+        // on unstake; claim never touches it), so it fails this check.
+        require!(
+            ctx.accounts.voter_stake.staked_at <= ctx.accounts.proposal.created_at,
+            GovError::StakeTooNew
+        );
+
         let weight = stake_weight(&ctx.accounts.voter_stake)?;
         require!(weight > 0, GovError::NoVotingPower);
 

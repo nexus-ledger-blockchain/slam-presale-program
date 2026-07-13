@@ -260,4 +260,40 @@ describe("slam_staking — fixed-APY lock tiers", () => {
     } catch { rejected = true; }
     assert.isTrue(rejected, "voting with another wallet's stake must fail");
   });
+
+  it("rejects a stake created AFTER the proposal (anti-recycling snapshot)", async () => {
+    // Open a proposal first (proposer = user, whose stake predates it).
+    const c = await gov.account.govConfig.fetch(govConfig);
+    const id = c.proposalCount.toNumber();
+    await gov.methods.createProposal("Snapshot test", "Late stakers must not be able to vote.")
+      .accounts({
+        proposer: user.publicKey, config: govConfig, proposal: proposalPda(id),
+        proposerStake: stakePda(user.publicKey), systemProgram: anchor.web3.SystemProgram.programId,
+      }).signers([user]).rpc();
+
+    // A brand-new staker enters AFTER the proposal opened.
+    const late = anchor.web3.Keypair.generate();
+    await connection.confirmTransaction(
+      await connection.requestAirdrop(late.publicKey, 2 * anchor.web3.LAMPORTS_PER_SOL));
+    const lateSlam = (await getOrCreateAssociatedTokenAccount(connection, admin.payer, slamMint, late.publicKey)).address;
+    await mintTo(connection, admin.payer, slamMint, lateSlam, admin.publicKey, 1_000_000 * DEC);
+    await program.methods.stake(new anchor.BN(1_000_000 * DEC), 0)
+      .accounts({
+        owner: late.publicKey, config, stakeAccount: stakePda(late.publicKey),
+        ownerSlamAccount: lateSlam, stakeVault, tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      }).signers([late]).rpc();
+
+    // Their vote must be rejected — the stake postdates the proposal.
+    let blocked = false;
+    try {
+      await gov.methods.castVote(1)
+        .accounts({
+          voter: late.publicKey, config: govConfig, proposal: proposalPda(id),
+          voteRecord: votePda(proposalPda(id), late.publicKey),
+          voterStake: stakePda(late.publicKey), systemProgram: anchor.web3.SystemProgram.programId,
+        }).signers([late]).rpc();
+    } catch (e: any) { blocked = /StakeTooNew/.test(e.toString()); }
+    assert.isTrue(blocked, "a stake created after the proposal must not be able to vote");
+  });
 });

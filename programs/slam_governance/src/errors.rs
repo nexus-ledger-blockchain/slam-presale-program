@@ -28,4 +28,6 @@ pub enum GovError {
     MathOverflow,
     #[msg("Voting period must be between 1 hour and 30 days")]
     InvalidVotingPeriod,
+    #[msg("Stake was created after this proposal opened; it cannot vote (anti-recycling snapshot)")]
+    StakeTooNew,
 }
